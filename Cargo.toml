@@ -1,0 +1,11 @@
+[package]
+name = "lightshot-scraper"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.46.1", features = ["macros", "rt", "rt-multi-thread", "fs"] }
+futures-util = "0.3.31"
+reqwest = { version = "0.12.22", features = ["rustls-tls", "stream"] }
+scraper = "0.23.1"
+itertools = "0.14.0"
