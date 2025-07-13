@@ -1,6 +1,6 @@
 [package]
 name = "lightshot-scraper"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [dependencies]
@@ -10,6 +10,7 @@ reqwest = { version = "0.12.22", features = ["rustls-tls", "stream"] }
 scraper = "0.23.1"
 url = "2.5.4"
 itertools = "0.14.0"
+dotenvy = "0.15.7"
 
 [profile.dev]
 opt-level = 0

@@ -1,14 +1,9 @@
 use futures_util::StreamExt;
 use itertools::Itertools;
-use reqwest::header::HeaderMap;
-use reqwest::{Client, Proxy, header};
+use reqwest::{Client, Proxy, header, header::HeaderMap};
 use scraper::Selector;
-use std::path::Path;
-use std::time::Duration;
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
-use tokio::time::sleep;
-use tokio::{fs, io};
+use std::{env, path::Path, time::Duration};
+use tokio::{fs, fs::File, fs::create_dir_all, io, io::AsyncWriteExt, time::sleep};
 use url::Url;
 
 const DICT: [char; 36] = [
@@ -17,16 +12,19 @@ const DICT: [char; 36] = [
 ];
 const COMB_LEN: u8 = 6;
 const FILE_BASE: &str = "img";
-const DELAY: u8 = 1;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
+    let delay = env::var("DELAY")?.parse()?;
+    let images = env::var("IMAGES")?.parse()?;
+
+    create_dir_all(FILE_BASE).await?;
     let client = get_client().await?;
 
     let comb_iter = (0..COMB_LEN).map(|_| DICT).multi_cartesian_product();
 
-    for comb_vec in comb_iter {
-        // .take(1000000)
+    for comb_vec in comb_iter.take(images) {
         let comb: String = comb_vec.into_iter().collect();
         if is_founded_file(&comb).await? {
             continue;
@@ -64,7 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             panic!("img#screenshot-image or src not found.");
         }
 
-        sleep(Duration::from_secs(DELAY as u64)).await;
+        sleep(Duration::from_secs(delay)).await;
     }
 
     Ok(())
