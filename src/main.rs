@@ -25,7 +25,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let comb_iter = (0..COMB_LEN).map(|_| DICT).multi_cartesian_product();
 
-    for comb_vec in comb_iter.take(1000) {
+    for comb_vec in comb_iter {
+        // .take(1000000)
         let comb: String = comb_vec.into_iter().collect();
         if is_founded_file(&comb).await? {
             continue;
@@ -36,7 +37,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("Getting {url}");
 
         let text = client.get(url).send().await?.text().await?;
-        // println!("{text}");
 
         let html = scraper::Html::parse_document(&text);
         let sel = Selector::parse(r#"img#screenshot-image"#).unwrap();
@@ -55,7 +55,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 println!("{comb} downloading\n");
                 download(client, src, &path).await?;
-                // .expect("Download failed");
             }
         } else {
             if text == "error code: 1006" {
@@ -67,7 +66,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         sleep(Duration::from_secs(DELAY as u64)).await;
     }
-    // join_all(futures).await;
 
     Ok(())
 }
@@ -107,7 +105,8 @@ async fn get_client() -> reqwest::Result<Client> {
 async fn download(client: Client, src: &str, path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let resp = client.get(src).send().await?;
     if !resp.status().is_success() {
-        return Err(format!("Failed with status {}", resp.status()).into());
+        println!("Failed with status {}", resp.status());
+        return Ok(());
     }
 
     let mut file = File::create(path).await?;
