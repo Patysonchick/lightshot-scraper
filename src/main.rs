@@ -1,13 +1,14 @@
 use futures_util::StreamExt;
 use itertools::Itertools;
 use reqwest::header::HeaderMap;
-use reqwest::{header, Client, Proxy};
+use reqwest::{Client, Proxy, header};
 use scraper::Selector;
 use std::path::Path;
 use std::time::Duration;
 use tokio::fs::File;
 use tokio::io::AsyncWriteExt;
 use tokio::time::sleep;
+use tokio::{fs, io};
 use url::Url;
 
 const DICT: [char; 36] = [
@@ -15,13 +16,63 @@ const DICT: [char; 36] = [
     't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
 ];
 const COMB_LEN: u8 = 6;
-const DELAY: u8 = 5;
+const FILE_BASE: &str = "img";
+const DELAY: u8 = 1;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // удалённые - //st.prntscr.com/2023/07/24/0635/img/0_173a7b_211be8ff.png
-    // id тега - screenshot-image
+    let client = get_client().await?;
 
+    let comb_iter = (0..COMB_LEN).map(|_| DICT).multi_cartesian_product();
+
+    for comb_vec in comb_iter.take(1000) {
+        let comb: String = comb_vec.into_iter().collect();
+        if is_founded_file(&comb).await? {
+            continue;
+        }
+
+        let client = client.clone();
+        let url = format!("https://prnt.sc/{comb}");
+        println!("Getting {url}");
+
+        let text = client.get(url).send().await?.text().await?;
+        // println!("{text}");
+
+        let html = scraper::Html::parse_document(&text);
+        let sel = Selector::parse(r#"img#screenshot-image"#).unwrap();
+        if let Some(src) = html.select(&sel).next().and_then(|e| e.value().attr("src")) {
+            println!("src: {src}");
+
+            if src == "//st.prntscr.com/2023/07/24/0635/img/0_173a7b_211be8ff.png" {
+                println!("{comb} not found\n");
+                continue;
+            }
+
+            if let Ok(url) = Url::parse(src) {
+                let path = Path::new(url.path());
+                let ext = path.extension().and_then(|s| s.to_str()).unwrap();
+                let path = format!("{FILE_BASE}/{comb}.{ext}");
+
+                println!("{comb} downloading\n");
+                download(client, src, &path).await?;
+                // .expect("Download failed");
+            }
+        } else {
+            if text == "error code: 1006" {
+                panic!("Your IP banned")
+            }
+
+            panic!("img#screenshot-image or src not found.");
+        }
+
+        sleep(Duration::from_secs(DELAY as u64)).await;
+    }
+    // join_all(futures).await;
+
+    Ok(())
+}
+
+async fn get_client() -> reqwest::Result<Client> {
     let mut headers = HeaderMap::new();
     // headers.insert(header::HOST, "prnt.sc".parse().unwrap());
     headers.insert(
@@ -50,57 +101,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .proxy(Proxy::all("socks5://127.0.0.1:2080").unwrap())
         .build()?;
 
-    let comb_iter = (0..COMB_LEN).map(|_| DICT).multi_cartesian_product();
-
-    // let mut futures = Vec::new();
-    for comb_vec in comb_iter.take(100) {
-        let client = client.clone();
-        // futures.push(async move {
-        let comb: String = comb_vec.into_iter().collect();
-        let url = format!("https://prnt.sc/{comb}");
-        println!("Getting {url}");
-
-        let text = client
-            .get(url)
-            .send()
-            .await?
-            // .expect("Error sending request")
-            .text()
-            .await?;
-        // .expect("Error getting text");
-        // println!("{text}");
-
-        let html = scraper::Html::parse_document(&text);
-        let sel = Selector::parse(r#"img#screenshot-image"#).unwrap();
-        if let Some(element) = html.select(&sel).next() {
-            if let Some(src) = element.value().attr("src") {
-                println!("src: {src}");
-                if src != "//st.prntscr.com/2023/07/24/0635/img/0_173a7b_211be8ff.png" {
-                    if let Ok(url) = Url::parse(src) {
-                        let path = Path::new(url.path());
-                        let ext = path.extension().and_then(|s| s.to_str()).unwrap();
-                        let path = format!("img/{comb}.{ext}");
-
-                        println!("{comb} found");
-                        download(client, src, &path).await?;
-                        // .expect("Download failed");
-                    }
-                } else {
-                    println!("{comb} not found")
-                }
-            } else {
-                println!("{comb} src not found")
-            }
-        } else {
-            println!("img#screenshot-image not found.");
-        }
-
-        sleep(Duration::from_secs(DELAY as u64)).await;
-        // });
-    }
-    // join_all(futures).await;
-
-    Ok(())
+    Ok(client)
 }
 
 async fn download(client: Client, src: &str, path: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -118,4 +119,24 @@ async fn download(client: Client, src: &str, path: &str) -> Result<(), Box<dyn s
     }
 
     Ok(())
+}
+
+async fn is_founded_file(comb: &str) -> io::Result<bool> {
+    let mut entries = fs::read_dir(FILE_BASE).await?;
+
+    while let Some(entry) = entries.next_entry().await? {
+        let path = entry.path();
+
+        if !path.is_file() {
+            continue;
+        }
+
+        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+            if stem == comb {
+                return Ok(true);
+            }
+        }
+    }
+
+    Ok(false)
 }
